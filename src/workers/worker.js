@@ -1,32 +1,70 @@
 import http from 'node:http'
-import {PORT, SIMULATED_IO_DELAY, ERROR_PROBABILITY, SHUTDOWN_TIMEOUT} from '../config/constants.js'
+import {Worker} from 'node:worker_threads'
+import path from 'node:path'
+import {fileURLToPath} from 'node:url'
+import {PORT, ERROR_PROBABILITY, SHUTDOWN_TIMEOUT} from '../config/constants.js'
+import {writeLog} from '../utils/logger.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 let isShuttingDown = false
+
+const runHeavyTaskInWorkerThread = () => {
+    return new Promise((resolve, reject) => {
+        const workerPath = path.join(__dirname, 'heavyComputation.js')
+        const worker = new Worker(workerPath)
+
+        worker.on('message', (message) => {
+            resolve(message)
+        })
+
+        worker.on('error', (error) => {
+            reject(error)
+        })
+
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Worker thread stopped with exit code ${code}`))
+            }
+        })
+    })
+}
 
 const server = http.createServer(async (req, res) => {
     if (req.url === '/escribir-evidencia' && req.method === 'POST') {
         if (isShuttingDown) {
+            writeLog('warn', 'Request rejected. Server is shutting down.')
             res.writeHead(503, {'Content-Type': 'application/json'})
             res.end(JSON.stringify({error: 'Server is shutting down'}))
             return
         }
 
-        // Heavy I/O simulation (3000 ms)
-        await new Promise((resolve) => setTimeout(resolve, SIMULATED_IO_DELAY))
+        try {
+            writeLog('info', 'Executing heavy I/O and computation via worker thread...')
 
-        // Post-writing anomaly simulation (50% probability)
-        if (Math.random() < ERROR_PROBABILITY) {
-            console.error(`[WORKER ${process.pid}] Anomaly detected. Exiting with code 1`)
-            process.exit(1)
+            // Heavy computation delegated to worker_threads (non-blocking event loop)
+            await runHeavyTaskInWorkerThread()
+
+            // Post-writing anomaly simulation (50% probability)
+            if (Math.random() < ERROR_PROBABILITY) {
+                writeLog('error', 'Anomaly detected. Exiting process with code 1.')
+                process.exit(1)
+            }
+
+            writeLog('info', 'Evidence written and processed successfully.')
+            res.writeHead(200, {'Content-Type': 'application/json'})
+            res.end(JSON.stringify({
+                status: 'success',
+                message: 'Evidence written successfully using worker threads',
+                workerPid: process.pid,
+                timestamp: Date.now()
+            }))
+        } catch (error) {
+            writeLog('error', `Execution failed: ${error.message}`)
+            res.writeHead(500, {'Content-Type': 'application/json'})
+            res.end(JSON.stringify({error: 'Internal server error'}))
         }
-
-        res.writeHead(200, {'Content-Type': 'application/json'})
-        res.end(JSON.stringify({
-            status: 'success',
-            message: 'Evidence written successfully',
-            workerPid: process.pid,
-            timestamp: Date.now()
-        }))
         return
     }
 
@@ -35,24 +73,24 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(PORT, () => {
-    console.log(`[WORKER] PID: ${process.pid} listening on port ${PORT}`)
+    writeLog('info', `Worker listening on port ${PORT}`)
 })
 
 // IPC mapping and graceful shutdown
 process.on('message', (msg) => {
     if (msg === 'shutdown') {
         isShuttingDown = true
-        console.log(`[WORKER ${process.pid}] Received shutdown signal. Closing server...`)
+        writeLog('warn', 'Received shutdown signal. Closing server gracefully...')
 
         // 10-second safety timeout
         const forceTimeout = setTimeout(() => {
-            console.error(`[WORKER ${process.pid}] Force shutdown due to timeout`)
+            writeLog('error', 'Force shutdown triggered due to safety timeout.')
             process.exit(0)
         }, SHUTDOWN_TIMEOUT)
 
         server.close(() => {
             clearTimeout(forceTimeout)
-            console.log(`[WORKER ${process.pid}] Server closed cleanly. Exiting with code 0`)
+            writeLog('info', 'Server closed cleanly. Exiting with code 0.')
             process.exit(0)
         })
     }
