@@ -52,13 +52,17 @@ const server = http.createServer(async (req, res) => {
                 process.exit(1)
             }
 
+            // Generate clean human-readable timestamp
+            const now = new Date()
+            const readableTimestamp = now.toISOString().replace('T', ' ').substring(0, 19)
+
             writeLog('info', 'Evidence written and processed successfully.')
             res.writeHead(200, {'Content-Type': 'application/json'})
             res.end(JSON.stringify({
                 status: 'success',
                 message: 'Evidence written successfully using worker threads',
                 workerPid: process.pid,
-                timestamp: Date.now()
+                timestamp: readableTimestamp
             }))
         } catch (error) {
             writeLog('error', `Execution failed: ${error.message}`)
