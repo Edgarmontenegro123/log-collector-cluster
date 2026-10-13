@@ -1,0 +1,13 @@
+{
+  "name": "log-collector-cluster",
+  "version": "1.0.0",
+  "description": "High-performance log collection service with clustering and self-healing",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
