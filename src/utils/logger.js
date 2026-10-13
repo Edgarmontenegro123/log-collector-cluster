@@ -7,8 +7,12 @@ const __dirname = path.dirname(__filename)
 const logFilePath = path.join(__dirname, '../../app.log')
 
 export const writeLog = (level, message) => {
-    const timestamp = new Date().toISOString()
-    const logEntry = `[${timestamp}] [${level.toUpperCase}] [PID: ${process.pid}] ${message}\n`
+    const now = new Date()
+    // (YYYY-MM-DD HH:mm:ss)
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19)
+    const formattedLevel = level.toUpperCase()
+
+    const logEntry = `[${timestamp}] [${formattedLevel}] [PID: ${process.pid}] ${message}\n`
 
     try {
         fs.appendFileSync(logFilePath, logEntry, 'utf8')
